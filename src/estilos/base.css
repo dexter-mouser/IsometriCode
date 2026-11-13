@@ -1,0 +1,146 @@
+/* Fuentes locales */
+@font-face {
+  font-family: 'Barlow Condensed';
+  src: url('/fuentes/barlow-condensed-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fuentes/inter-variable.woff2') format('woff2');
+  font-weight: 400 600;
+  font-display: swap;
+}
+
+/* Medidas compartidas (los colores llegan desde src/datos/tema.js) */
+:root {
+  --ancho-menu: 64px;
+  --radio: 14px;
+  --radio-chico: 10px;
+  --sombra: 0 10px 30px rgb(29 42 36 / 0.14), 0 2px 6px rgb(29 42 36 / 0.08);
+  --fuente-titulo: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --fuente-texto: 'Inter', system-ui, sans-serif;
+  color-scheme: light;
+}
+
+/* CSS general */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 1024px;
+  overflow: hidden;
+  font-family: var(--fuente-texto);
+  font-size: 14px;
+  color: var(--color-texto);
+  background: linear-gradient(to bottom, var(--color-cielo-arriba), var(--color-cielo-abajo) 70%);
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-acento);
+  outline-offset: 2px;
+}
+
+.solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Escena a pantalla completa */
+.escena {
+  position: fixed;
+  inset: 0;
+}
+
+.escena canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Etiqueta junto al cursor */
+.etiqueta {
+  position: fixed;
+  top: 0;
+  left: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--color-menu);
+  box-shadow: var(--sombra);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.etiqueta--visible {
+  opacity: 1;
+}
+
+/* Fundido entre la ciudad y la oficina */
+.fundido {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: #ffffff;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.fundido--visible {
+  opacity: 1;
+}
+
+/* Aviso breve */
+.aviso {
+  position: fixed;
+  bottom: 24px;
+  left: calc(50% + var(--ancho-menu) / 2);
+  padding: 10px 18px;
+  border-radius: var(--radio-chico);
+  font-weight: 500;
+  color: #ffffff;
+  background: var(--color-menu);
+  box-shadow: var(--sombra);
+  opacity: 0;
+  translate: -50% 12px;
+  transition: opacity 0.2s, translate 0.2s;
+  pointer-events: none;
+}
+
+.aviso--visible {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .etiqueta,
+  .aviso {
+    transition: none;
+  }
+}

@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { coloresEscena } from '../datos/tema.js';
 
 const PIXEL_RATIO_MAXIMO = 2;
-const TAMANO_MAPA_SOMBRAS = 2048;
-const ALCANCE_SOMBRAS = 30;
+const TAMANO_MAPA_SOMBRAS = 3072;
+const ALCANCE_SOMBRAS = 80;
 
 // Renderer, escena, luces y bucle de animación
 export function crearEscenario(lienzo) {
@@ -16,8 +16,9 @@ export function crearEscenario(lienzo) {
   const escena = new THREE.Scene();
   agregarLuces(escena);
 
-  const actualizadores = [];
-  return { renderer, escena, actualizadores };
+  window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight, false));
+
+  return { renderer, escena };
 }
 
 // Sol con sombras + luz de cielo
@@ -35,20 +36,22 @@ function agregarLuces(escena) {
   camaraSombra.top = ALCANCE_SOMBRAS;
   camaraSombra.bottom = -ALCANCE_SOMBRAS;
   camaraSombra.near = 10;
-  camaraSombra.far = 120;
+  camaraSombra.far = 160;
   sol.shadow.bias = -0.0004;
   sol.shadow.normalBias = 0.03;
   sol.shadow.radius = 3;
   escena.add(sol);
 }
 
-// Bucle: actualiza cada sistema y dibuja; se pausa con la pestaña oculta
-export function iniciarBucle({ renderer, escena, actualizadores }, camara) {
+// Bucle: actualiza los sistemas de la vista activa y la dibuja; se pausa con la pestaña oculta
+// obtenerVista devuelve { escena, camara, actualizadores } de la vista activa (ciudad u oficina)
+export function iniciarBucle(renderer, obtenerVista) {
   const reloj = new THREE.Clock();
 
   const dibujarFotograma = () => {
     const delta = Math.min(reloj.getDelta(), 0.1);
     const tiempo = reloj.elapsedTime;
+    const { escena, camara, actualizadores } = obtenerVista();
     for (const actualizar of actualizadores) actualizar(delta, tiempo);
     renderer.render(escena, camara);
   };
