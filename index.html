@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Escena isométrica interactiva de un edificio de dos torres.">
+    <title>IsometriCode</title>
+    <link rel="preload" href="/fuentes/barlow-condensed-600.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fuentes/inter-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/src/estilos/base.css">
+    <link rel="stylesheet" href="/src/estilos/menu.css">
+    <link rel="stylesheet" href="/src/estilos/panel.css">
+  </head>
+  <body>
+    <h1 class="solo-lector">IsometriCode · Edificio de prueba</h1>
+
+    <!-- Menú lateral -->
+    <nav class="menu" aria-label="Menú principal">
+      <a class="menu__logo" href="/" aria-label="Inicio de prueba">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 27V9l7-4v22M18 27V12l7 3v12M4 27h24"/></svg>
+      </a>
+      <ul class="menu__lista" id="menu-lista"></ul>
+    </nav>
+
+    <!-- Escena 3D -->
+    <main class="escena" id="escena" aria-label="Vista isométrica del edificio. Arrastra para girar, rueda para acercar.">
+      <canvas id="lienzo"></canvas>
+    </main>
+
+    <!-- Etiqueta del cursor -->
+    <div class="etiqueta" id="etiqueta" aria-hidden="true"></div>
+
+    <!-- Panel del elemento seleccionado -->
+    <dialog class="panel" id="panel" popover="manual" aria-labelledby="panel-titulo">
+      <header class="panel__cabecera">
+        <p class="panel__tipo" id="panel-tipo"></p>
+        <h2 class="panel__titulo" id="panel-titulo"></h2>
+        <p class="panel__id" id="panel-id"></p>
+        <button class="panel__cerrar" id="panel-cerrar" type="button" aria-label="Cerrar panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <dl class="panel__datos" id="panel-datos"></dl>
+      <div class="panel__botones" id="panel-botones"></div>
+    </dialog>
+
+    <!-- Aviso breve -->
+    <div class="aviso" id="aviso" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
