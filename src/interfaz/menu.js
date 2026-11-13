@@ -1,6 +1,7 @@
 import { opcionesMenu } from '../datos/menu.js';
 import { crearIcono } from './iconos.js';
 import { mostrarAviso } from './aviso.js';
+import { ejecutarFuncion } from '../interaccion/funciones.js';
 
 // Menú lateral minimizado: iconos con etiqueta emergente
 export function crearMenu() {
@@ -10,7 +11,7 @@ export function crearMenu() {
   botones.forEach((boton, indice) => {
     boton.addEventListener('click', () => {
       for (const otro of botones) otro.setAttribute('aria-pressed', String(otro === boton));
-      mostrarAviso(`${opcionesMenu[indice].etiqueta} · sin función todavía`);
+      ejecutarFuncion(`menu/${opcionesMenu[indice].id}`, { etiqueta: opcionesMenu[indice].etiqueta }, { mostrarAviso });
     });
     const item = document.createElement('li');
     item.append(boton);

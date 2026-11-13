@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const cajaUnidad = new THREE.BoxGeometry(1, 1, 1);
 
@@ -45,6 +46,35 @@ export function pintarGeometria(geometria, color) {
   }
   geometria.setAttribute('color', new THREE.BufferAttribute(colores, 3));
   return geometria;
+}
+
+// Lote de piezas fijas: se acumulan cajas y geometrías de colores y se dibujan en una sola malla
+export function crearLote() {
+  const piezas = [];
+  const rotacion = new THREE.Matrix4();
+  return {
+    // giro: [x, y, z] en radianes, aplicado antes de mover la caja a su posición
+    caja(escala, posicion, color, giro = null) {
+      const geometria = new THREE.BoxGeometry(...escala);
+      if (giro) geometria.applyMatrix4(rotacion.makeRotationFromEuler(new THREE.Euler(...giro)));
+      geometria.translate(...posicion);
+      piezas.push(pintarGeometria(geometria, color));
+    },
+    geometria(geometria, color) {
+      piezas.push(pintarGeometria(geometria, color));
+    },
+    construir({ sombras = false } = {}) {
+      const malla = new THREE.Mesh(unirGeometrias(piezas), new THREE.MeshLambertMaterial({ color: '#ffffff', vertexColors: true }));
+      malla.castShadow = sombras;
+      malla.receiveShadow = true;
+      return malla;
+    },
+  };
+}
+
+// Une geometrías mezclando indexadas y no indexadas (todas pasan a no indexadas)
+export function unirGeometrias(piezas) {
+  return mergeGeometries(piezas.map((pieza) => (pieza.index ? pieza.toNonIndexed() : pieza)));
 }
 
 // Generador pseudoaleatorio con semilla (misma escena en cada carga)

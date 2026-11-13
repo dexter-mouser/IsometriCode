@@ -80,6 +80,20 @@
   cursor: not-allowed;
 }
 
+/* Botón Día / Tarde al pie del menú */
+.menu__ambiente {
+  margin-top: auto;
+}
+
+.menu__icono-tarde,
+.menu__ambiente[aria-pressed='true'] .menu__icono-dia {
+  display: none;
+}
+
+.menu__ambiente[aria-pressed='true'] .menu__icono-tarde {
+  display: block;
+}
+
 /* Etiqueta emergente */
 .menu__etiqueta {
   position: absolute;
@@ -102,7 +116,7 @@
   pointer-events: none;
 }
 
-.menu__boton:is(:hover, :focus-visible) .menu__etiqueta {
+.menu__boton:is(:hover, :focus-visible):not(.menu__lista--sin-etiquetas *) .menu__etiqueta {
   opacity: 1;
   translate: 0 -50%;
 }

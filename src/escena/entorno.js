@@ -1,38 +1,44 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { avenida, MITAD_TERRENO } from '../datos/ciudad.js';
+import { avenida, calle30, calleSur, MITAD_TERRENO, rio as RIO, vias } from '../datos/ciudad.js';
 import { coloresEscena } from '../datos/tema.js';
 import { centrosParques, MITAD_FRANJA, zonaOcupada } from './ciudad.js';
 import { crearTerreno } from './terreno.js';
-import { cajaUnidad, crearAleatorio, crearCaja, crearInstancias, entre, pintarGeometria } from './utilidades.js';
+import { cajaUnidad, crearAleatorio, crearInstancias, crearLote, entre, pintarGeometria } from './utilidades.js';
 
 // Disposición del terreno (eje z hacia el frente del edificio)
 const ANDEN = { z: 14.25, ancho: 1.5 };
-const VIA = { z: 19, ancho: 8 };
-const SEPARADOR = { z: 19, ancho: 0.8 };
-const RIO = { z: 28, ancho: 6 };
+const ANCHO_SEPARADOR = 0.8;
+const DESPLAZAMIENTO_CARRILES = [[-3.1, -1, 6.5], [-1.3, -1, 5], [1.3, 1, 5.5], [3.1, 1, 7]];
 const LIMITE_VIA = MITAD_FRANJA - 1;
 const LIMITE_AVENIDA = MITAD_FRANJA - 1;
 
-// Carriles: autopista y avenida, ambas sobre el eje x
+// Carriles: Regional, Autopista Sur y Carrera 48, todas sobre el eje x
 const CARRILES = [
-  ...[[15.9, -1, 6.5], [17.7, -1, 5], [20.3, 1, 5.5], [22.1, 1, 7]].map(([coordenada, sentido, velocidad]) => ({
-    eje: 'x', coordenada, sentido, velocidad, minimo: -LIMITE_VIA, maximo: LIMITE_VIA, carros: 6,
-  })),
+  ...vias.flatMap((via) => DESPLAZAMIENTO_CARRILES.map(([desplazamiento, sentido, velocidad]) => ({
+    eje: 'x', coordenada: via.z + desplazamiento, sentido, velocidad, minimo: -LIMITE_VIA, maximo: LIMITE_VIA, carros: 6,
+  }))),
   ...avenida.carriles.map((carril) => ({
     ...carril, eje: 'x', minimo: -LIMITE_AVENIDA, maximo: LIMITE_AVENIDA, carros: avenida.carrosPorCarril,
   })),
+  // Calle 30 y calle del sur: solo en su tramo a nivel detrás del edificio
+  ...[calle30, calleSur].flatMap((calle) => [[-1.3, 1, 4.5], [1.3, -1, 5]].map(([desplazamiento, sentido, velocidad]) => ({
+    eje: 'z', coordenada: calle.x + desplazamiento, sentido, velocidad, minimo: -MITAD_FRANJA + 1, maximo: calle30.inicioRampa - 1, carros: 3,
+  }))),
 ];
 const CANTIDAD_ARBOLES = 120;
 const CANTIDAD_BRILLOS = 32;
-const ZONA_SIN_ARBOLES = { xMin: -46, xMax: 46, zMin: -8, zMax: 36 };
+const ZONA_SIN_ARBOLES = { xMin: -46, xMax: 46, zMin: -8, zMax: 15 };
+const ALTO_MURO_RIO = 0.5;
 
 // Terreno, autopista, río y árboles; devuelve la función de animación
 export function crearEntorno(escena) {
   escena.add(crearTerreno());
-  agregarMurosRio(escena);
-  agregarAutopista(escena);
-  const animarBrillos = agregarRio(escena);
+  const lote = crearLote();
+  agregarAutopistas(escena, lote);
+  agregarRio(lote);
+  escena.add(lote.construir());
+  const animarBrillos = agregarBrillosRio(escena);
   agregarArboles(escena);
   const animarCarros = agregarCarros(escena);
 
@@ -42,51 +48,47 @@ export function crearEntorno(escena) {
   };
 }
 
-// Muros de concreto del río canalizado
-function agregarMurosRio(escena) {
-  for (const lado of [-1, 1]) {
-    escena.add(crearCaja([MITAD_FRANJA * 2, 0.5, 0.35], [0, 0.25, RIO.z + lado * (RIO.ancho / 2 + 0.17)], coloresEscena.orilla));
-  }
-}
-
 // Largo de una franja horizontal: el terreno es cuadrado, todas llegan al borde
 function largoFranja() {
   return MITAD_FRANJA * 2;
 }
 
-function crearFranja(z, ancho, alto, color) {
-  return crearCaja([largoFranja(z, ancho), alto, ancho], [0, alto / 2, z], color, { sombras: false });
+function agregarFranja(lote, z, ancho, alto, color) {
+  lote.caja([largoFranja(), alto, ancho], [0, alto / 2, z], color);
 }
 
-// Andén, asfalto, separador y líneas
-function agregarAutopista(escena) {
-  escena.add(
-    crearFranja(ANDEN.z, ANDEN.ancho, 0.1, coloresEscena.anden),
-    crearFranja(VIA.z, VIA.ancho, 0.05, coloresEscena.asfalto),
-    crearFranja(SEPARADOR.z, SEPARADOR.ancho, 0.2, coloresEscena.separador),
-  );
-
+// Andén frente al edificio y, por cada vía rápida, asfalto, separador y líneas
+function agregarAutopistas(escena, lote) {
+  agregarFranja(lote, ANDEN.z, ANDEN.ancho, 0.1, coloresEscena.anden);
   const lineas = [];
-  for (const zBorde of [VIA.z - VIA.ancho / 2 + 0.15, VIA.z + VIA.ancho / 2 - 0.15]) {
-    lineas.push({ posicion: [0, 0.06, zBorde], escala: [largoFranja(zBorde, 0.1), 0.01, 0.1] });
-  }
-  for (const zDivisoria of [16.8, 21.2]) {
-    const limite = largoFranja(zDivisoria, 0.1) / 2 - 1;
-    for (let x = -limite; x < limite; x += 4) {
-      lineas.push({ posicion: [x, 0.06, zDivisoria], escala: [1.6, 0.01, 0.1] });
+  for (const via of vias) {
+    agregarFranja(lote, via.z, via.ancho, 0.05, coloresEscena.asfalto);
+    agregarFranja(lote, via.z, ANCHO_SEPARADOR, 0.2, coloresEscena.separador);
+    for (const zBorde of [via.z - via.ancho / 2 + 0.15, via.z + via.ancho / 2 - 0.15]) {
+      lineas.push({ posicion: [0, 0.06, zBorde], escala: [largoFranja(), 0.01, 0.1] });
+    }
+    for (const zDivisoria of [via.z - 2.2, via.z + 2.2]) {
+      const limite = largoFranja() / 2 - 1;
+      for (let x = -limite; x < limite; x += 4) {
+        lineas.push({ posicion: [x, 0.06, zDivisoria], escala: [1.6, 0.01, 0.1] });
+      }
     }
   }
   escena.add(crearInstancias(cajaUnidad, lineas, coloresEscena.lineaVia, { sombras: false }));
 }
 
-// Río con orillas y brillos que fluyen
-function agregarRio(escena) {
-  escena.add(
-    crearFranja(RIO.z, RIO.ancho, 0.04, coloresEscena.rio),
-  );
+// Río canalizado: agua y muros de concreto
+function agregarRio(lote) {
+  agregarFranja(lote, RIO.z, RIO.ancho, 0.04, coloresEscena.rio);
+  for (const lado of [-1, 1]) {
+    lote.caja([largoFranja(), ALTO_MURO_RIO, 0.35], [0, ALTO_MURO_RIO / 2, RIO.z + lado * (RIO.ancho / 2 + 0.17)], coloresEscena.orilla);
+  }
+}
 
+// Brillos que fluyen sobre el agua
+function agregarBrillosRio(escena) {
   const aleatorio = crearAleatorio(7);
-  const limite = largoFranja(RIO.z, RIO.ancho) / 2 - 1;
+  const limite = largoFranja() / 2 - 1;
   const brillos = Array.from({ length: CANTIDAD_BRILLOS }, () => ({
     x: entre(aleatorio, -limite, limite),
     z: entre(aleatorio, RIO.z - RIO.ancho / 2 + 0.6, RIO.z + RIO.ancho / 2 - 0.6),
@@ -118,7 +120,10 @@ function agregarRio(escena) {
 function puedeTenerArbol(x, z) {
   const dentroDelDisco = Math.max(Math.abs(x), Math.abs(z)) < MITAD_TERRENO - 1.5;
   const enZonaLibre = x > ZONA_SIN_ARBOLES.xMin && x < ZONA_SIN_ARBOLES.xMax && z > ZONA_SIN_ARBOLES.zMin && z < ZONA_SIN_ARBOLES.zMax;
-  const enViaORio = z > ANDEN.z - 1.5 && z < RIO.z + RIO.ancho / 2 + 1;
+  const enAnden = Math.abs(z - ANDEN.z) < ANDEN.ancho / 2 + 0.5;
+  const enVia = vias.some((via) => Math.abs(z - via.z) < via.ancho / 2 + 0.5);
+  const enRio = Math.abs(z - RIO.z) < RIO.ancho / 2 + 0.8;
+  const enViaORio = enAnden || enVia || enRio;
   return dentroDelDisco && !enZonaLibre && !enViaORio && !zonaOcupada(x, z);
 }
 

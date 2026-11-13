@@ -3,7 +3,7 @@ import { coloresEscena } from '../datos/tema.js';
 
 const PIXEL_RATIO_MAXIMO = 2;
 const TAMANO_MAPA_SOMBRAS = 3072;
-const ALCANCE_SOMBRAS = 80;
+const ALCANCE_SOMBRAS = 72;
 
 // Renderer, escena, luces y bucle de animación
 export function crearEscenario(lienzo) {
@@ -14,11 +14,11 @@ export function crearEscenario(lienzo) {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const escena = new THREE.Scene();
-  agregarLuces(escena);
+  const luces = agregarLuces(escena);
 
   window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight, false));
 
-  return { renderer, escena };
+  return { renderer, escena, luces };
 }
 
 // Sol con sombras + luz de cielo
@@ -36,11 +36,12 @@ function agregarLuces(escena) {
   camaraSombra.top = ALCANCE_SOMBRAS;
   camaraSombra.bottom = -ALCANCE_SOMBRAS;
   camaraSombra.near = 10;
-  camaraSombra.far = 160;
+  camaraSombra.far = 150;
   sol.shadow.bias = -0.0004;
   sol.shadow.normalBias = 0.03;
   sol.shadow.radius = 3;
   escena.add(sol);
+  return { cielo, sol };
 }
 
 // Bucle: actualiza los sistemas de la vista activa y la dibuja; se pausa con la pestaña oculta

@@ -2,23 +2,26 @@ import * as THREE from 'three';
 import { coloresEscena } from '../datos/tema.js';
 import { crearAleatorio, entre } from './utilidades.js';
 
-const CANTIDAD_NUBES = 6;
+const CANTIDAD_NUBES = 7;
+const OPACIDAD_NUBES = 0.88;
+const ZOOM_SIN_NUBES = 2.2;
 const BOLAS_POR_NUBE = 5;
-const LIMITE_NUBES = 70;
+const LIMITE_NUBES = 58;
 const BANDADAS = [
-  { pajaros: 7, radio: 36, altura: 22, velocidadAngular: 0.13, fase: 0 },
-  { pajaros: 5, radio: 46, altura: 28, velocidadAngular: -0.1, fase: Math.PI },
+  { pajaros: 7, radio: 28, altura: 20, velocidadAngular: 0.13, fase: 0 },
+  { pajaros: 5, radio: 36, altura: 24, velocidadAngular: -0.1, fase: Math.PI },
 ];
 const SEPARACION_LATERAL = 1.3;
 const SEPARACION_TRASERA = 1.1;
 const FRECUENCIA_ALETEO = 9;
 
 // Nubes que se desplazan y bandadas de pájaros
-export function crearCielo(escena) {
+// obtenerZoom: las nubes se desvanecen al acercarse para no tapar el edificio
+export function crearCielo(escena, obtenerZoom) {
   const animarNubes = agregarNubes(escena);
   const animarPajaros = agregarPajaros(escena);
   return (delta, tiempo) => {
-    animarNubes(delta);
+    animarNubes(delta, obtenerZoom());
     animarPajaros(tiempo);
   };
 }
@@ -27,8 +30,8 @@ function agregarNubes(escena) {
   const aleatorio = crearAleatorio(11);
   const nubes = Array.from({ length: CANTIDAD_NUBES }, () => ({
     x: entre(aleatorio, -LIMITE_NUBES, LIMITE_NUBES),
-    y: entre(aleatorio, 30, 36),
-    z: -entre(aleatorio, 40, 62),
+    y: entre(aleatorio, 26, 32),
+    z: entre(aleatorio, -38, 38),
     velocidad: entre(aleatorio, 0.8, 1.8),
     bolas: Array.from({ length: BOLAS_POR_NUBE }, (_, indice) => ({
       dx: (indice - 2) * entre(aleatorio, 1.4, 2),
@@ -39,13 +42,16 @@ function agregarNubes(escena) {
   }));
 
   const geometria = new THREE.IcosahedronGeometry(1, 1);
-  const material = new THREE.MeshLambertMaterial({ color: coloresEscena.nube, flatShading: true, transparent: true, opacity: 0.92 });
+  const material = new THREE.MeshLambertMaterial({ color: coloresEscena.nube, flatShading: true, transparent: true, opacity: OPACIDAD_NUBES });
   const malla = new THREE.InstancedMesh(geometria, material, CANTIDAD_NUBES * BOLAS_POR_NUBE);
   malla.frustumCulled = false;
+  malla.castShadow = true;
   escena.add(malla);
 
   const auxiliar = new THREE.Object3D();
-  return (delta) => {
+  return (delta, zoom) => {
+    material.opacity = THREE.MathUtils.clamp(OPACIDAD_NUBES * (ZOOM_SIN_NUBES - zoom) / (ZOOM_SIN_NUBES - 1), 0, OPACIDAD_NUBES);
+    malla.visible = material.opacity > 0.02;
     let indice = 0;
     for (const nube of nubes) {
       nube.x += nube.velocidad * delta;

@@ -1,32 +1,42 @@
 import * as THREE from 'three';
+import { MITAD_TERRENO } from '../datos/ciudad.js';
 
 const ELEVACION = THREE.MathUtils.degToRad(35);
 const AZIMUT_INICIAL = THREE.MathUtils.degToRad(45);
 const DISTANCIA = 160;
-const ALTO_VISTA = 136;
-const OBJETIVO_INICIAL = new THREE.Vector3(0, -5, 0);
-const ZOOM_MINIMO = 0.8;
-const ZOOM_MAXIMO = 1.6;
-const ZOOM_VENTANA = 90;
+const ALTO_VISTA = 114;
+const OBJETIVO_INICIAL = new THREE.Vector3(0, -3, 0);
+export const ZOOM_MINIMO = 0.8;
+export const ZOOM_MAXIMO = 4;
+export const ZOOM_PREDETERMINADO = 1;
 const SENSIBILIDAD_GIRO = 0.006;
 const FRICCION_INERCIA = 0.9;
 const SUAVIZADO_ZOOM = 10;
+const PASO_RUEDA = 0.0015;
 const DURACION_REINICIO = 0.8;
 const DURACION_VIAJE = 1.2;
+const BOTON_IZQUIERDO = 0;
+const BOTON_CENTRAL = 1;
+const BOTON_DERECHO = 2;
 
-// Cámara ortográfica isométrica: gira en horizontal, zoom corto y viaje animado a una ventana
+const sueloPlano = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const rayo = new THREE.Raycaster();
+
+// Cámara ortográfica isométrica: gira con clic izquierdo, desplaza con clic derecho,
+// zoom hacia el cursor y viajes animados a un punto del edificio
 export function crearCamara(elementoEventos) {
   const camara = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 500);
   const estado = {
     azimut: AZIMUT_INICIAL,
     objetivo: OBJETIVO_INICIAL.clone(),
     velocidad: 0,
-    zoomObjetivo: 1,
-    arrastrando: false,
-    ultimoX: 0,
+    zoomObjetivo: ZOOM_PREDETERMINADO,
+    ancla: new THREE.Vector2(0, 0),
+    arrastre: null,
     animacion: null,
     bloqueada: false,
-    vistaGuardada: null,
+    vistasGuardadas: [],
+    alCambiarZoom: [],
   };
 
   ajustarProporcion(camara);
@@ -48,27 +58,39 @@ export function crearCamara(elementoEventos) {
 
   const reiniciar = () => {
     if (estado.bloqueada) return;
-    animarHacia({ azimut: AZIMUT_INICIAL, objetivo: OBJETIVO_INICIAL, zoom: 1 }, DURACION_REINICIO);
+    animarHacia({ azimut: AZIMUT_INICIAL, objetivo: OBJETIVO_INICIAL, zoom: ZOOM_PREDETERMINADO }, DURACION_REINICIO);
   };
 
-  // Gira de frente a la fachada (normal en x/z) y acerca hasta llenar la pantalla con la ventana
-  const viajarA = (posicion, normal, alTerminar) => {
-    estado.vistaGuardada = { azimut: estado.azimut, objetivo: estado.objetivo.clone(), zoom: camara.zoom };
-    estado.bloqueada = true;
-    const azimut = Math.atan2(normal[0], normal[1]);
-    animarHacia({ azimut, objetivo: new THREE.Vector3(...posicion), zoom: ZOOM_VENTANA }, DURACION_VIAJE, alTerminar);
+  // Viaja a un punto; con normal gira de frente a esa dirección. Guarda la vista para volver.
+  const viajarA = ({ posicion, normal, zoom, bloquear = true }, alTerminar) => {
+    estado.vistasGuardadas.push({ azimut: estado.azimut, objetivo: estado.objetivo.clone(), zoom: camara.zoom, bloqueada: estado.bloqueada });
+    estado.bloqueada = bloquear;
+    const azimut = normal ? Math.atan2(normal[0], normal[1]) : estado.azimut;
+    animarHacia({ azimut, objetivo: new THREE.Vector3(...posicion), zoom }, DURACION_VIAJE, alTerminar);
   };
 
+  // Regresa a la vista guardada en el último viaje
   const volver = (alTerminar) => {
-    const vista = estado.vistaGuardada ?? { azimut: AZIMUT_INICIAL, objetivo: OBJETIVO_INICIAL, zoom: 1 };
+    const vista = estado.vistasGuardadas.pop() ?? { azimut: AZIMUT_INICIAL, objetivo: OBJETIVO_INICIAL, zoom: ZOOM_PREDETERMINADO, bloqueada: false };
+    estado.bloqueada = true;
     animarHacia(vista, DURACION_VIAJE, () => {
-      estado.bloqueada = false;
+      estado.bloqueada = vista.bloqueada;
+      estado.zoomObjetivo = camara.zoom;
       alTerminar?.();
     });
   };
 
+  // Zoom desde la barra o los botones (hacia el centro de la pantalla)
+  const establecerZoom = (valor) => {
+    if (estado.bloqueada) return;
+    estado.ancla.set(0, 0);
+    estado.zoomObjetivo = THREE.MathUtils.clamp(valor, ZOOM_MINIMO, ZOOM_MAXIMO);
+    estado.animacion = null;
+  };
+
+  const alCambiarZoom = (funcion) => estado.alCambiarZoom.push(funcion);
   const actualizar = (delta) => actualizarCamara(camara, estado, delta);
-  return { camara, actualizar, reiniciar, viajarA, volver };
+  return { camara, actualizar, reiniciar, viajarA, volver, establecerZoom, alCambiarZoom, estaBloqueada: () => estado.bloqueada };
 }
 
 function ajustarProporcion(camara) {
@@ -88,35 +110,76 @@ function colocarCamara(camara, { azimut, objetivo }) {
     objetivo.z + Math.cos(azimut) * horizontal,
   );
   camara.lookAt(objetivo);
+  camara.updateMatrixWorld();
 }
 
-// Arrastre para girar, rueda para zoom (desactivados durante un viaje o en la oficina)
+// Punto del suelo (y = 0) bajo una posición de pantalla en coordenadas normalizadas
+function puntoEnSuelo(camara, ndc) {
+  rayo.setFromCamera(ndc, camara);
+  return rayo.ray.intersectPlane(sueloPlano, new THREE.Vector3());
+}
+
+const aNormalizadas = (evento) => new THREE.Vector2(
+  (evento.clientX / window.innerWidth) * 2 - 1,
+  -(evento.clientY / window.innerHeight) * 2 + 1,
+);
+
+// Mantiene el objetivo dentro del bloque de tierra
+function limitarObjetivo(objetivo) {
+  const limite = MITAD_TERRENO - 2;
+  objetivo.x = THREE.MathUtils.clamp(objetivo.x, -limite, limite);
+  objetivo.z = THREE.MathUtils.clamp(objetivo.z, -limite, limite);
+}
+
+// Desplaza el objetivo para que el punto del suelo bajo "desde" quede bajo "hasta"
+function desplazarEntre(camara, estado, desde, hasta) {
+  const puntoDesde = puntoEnSuelo(camara, desde);
+  const puntoHasta = puntoEnSuelo(camara, hasta);
+  if (!puntoDesde || !puntoHasta) return;
+  estado.objetivo.add(puntoDesde.sub(puntoHasta));
+  limitarObjetivo(estado.objetivo);
+  colocarCamara(camara, estado);
+}
+
+// Clic izquierdo gira, clic derecho o central desplaza, rueda acerca hacia el cursor
 function escucharEventos(elemento, camara, estado) {
+  elemento.addEventListener('contextmenu', (evento) => evento.preventDefault());
+
   elemento.addEventListener('pointerdown', (evento) => {
-    if (evento.button !== 0 || estado.bloqueada) return;
-    estado.arrastrando = true;
-    estado.ultimoX = evento.clientX;
+    if (estado.bloqueada) return;
+    const esGiro = evento.button === BOTON_IZQUIERDO;
+    const esDesplazamiento = evento.button === BOTON_DERECHO || evento.button === BOTON_CENTRAL;
+    if (!esGiro && !esDesplazamiento) return;
+    estado.arrastre = { tipo: esGiro ? 'giro' : 'desplazamiento', x: evento.clientX, ndc: aNormalizadas(evento) };
     estado.velocidad = 0;
     estado.animacion = null;
     elemento.setPointerCapture(evento.pointerId);
   });
 
   elemento.addEventListener('pointermove', (evento) => {
-    if (!estado.arrastrando) return;
-    const giro = (evento.clientX - estado.ultimoX) * SENSIBILIDAD_GIRO;
-    estado.ultimoX = evento.clientX;
-    estado.azimut -= giro;
-    estado.velocidad = -giro;
+    const arrastre = estado.arrastre;
+    if (!arrastre) return;
+    if (arrastre.tipo === 'giro') {
+      const giro = (evento.clientX - arrastre.x) * SENSIBILIDAD_GIRO;
+      arrastre.x = evento.clientX;
+      estado.azimut -= giro;
+      estado.velocidad = -giro;
+    } else {
+      const actual = aNormalizadas(evento);
+      desplazarEntre(camara, estado, arrastre.ndc, actual);
+      arrastre.ndc = actual;
+    }
   });
 
-  const soltar = () => { estado.arrastrando = false; };
+  const soltar = () => { estado.arrastre = null; };
   elemento.addEventListener('pointerup', soltar);
   elemento.addEventListener('pointercancel', soltar);
 
   elemento.addEventListener('wheel', (evento) => {
     evento.preventDefault();
     if (estado.bloqueada) return;
-    const factor = Math.exp(-evento.deltaY * 0.0012);
+    estado.ancla.copy(aNormalizadas(evento));
+    const factor = Math.exp(-evento.deltaY * PASO_RUEDA);
     estado.zoomObjetivo = THREE.MathUtils.clamp(estado.zoomObjetivo * factor, ZOOM_MINIMO, ZOOM_MAXIMO);
     estado.animacion = null;
   }, { passive: false });
@@ -124,21 +187,34 @@ function escucharEventos(elemento, camara, estado) {
   window.addEventListener('resize', () => ajustarProporcion(camara));
 }
 
+// Cambia el zoom manteniendo fijo el punto del suelo bajo el ancla
+function aplicarZoom(camara, estado, zoomNuevo) {
+  const antes = puntoEnSuelo(camara, estado.ancla);
+  camara.zoom = zoomNuevo;
+  camara.updateProjectionMatrix();
+  const despues = puntoEnSuelo(camara, estado.ancla);
+  if (antes && despues) {
+    estado.objetivo.add(antes.sub(despues));
+    limitarObjetivo(estado.objetivo);
+  }
+}
+
 function actualizarCamara(camara, estado, delta) {
+  const zoomAnterior = camara.zoom;
   if (estado.animacion) {
     animar(camara, estado, delta);
   } else if (!estado.bloqueada) {
-    if (!estado.arrastrando && Math.abs(estado.velocidad) > 0.00001) {
+    if (estado.arrastre?.tipo !== 'giro' && Math.abs(estado.velocidad) > 0.00001) {
       estado.azimut += estado.velocidad;
       estado.velocidad *= Math.pow(FRICCION_INERCIA, delta * 60);
     }
     const zoomNuevo = THREE.MathUtils.damp(camara.zoom, estado.zoomObjetivo, SUAVIZADO_ZOOM, delta);
-    if (Math.abs(zoomNuevo - camara.zoom) > 0.0001) {
-      camara.zoom = zoomNuevo;
-      camara.updateProjectionMatrix();
-    }
+    if (Math.abs(zoomNuevo - camara.zoom) > 0.0001) aplicarZoom(camara, estado, zoomNuevo);
   }
   colocarCamara(camara, estado);
+  if (Math.abs(camara.zoom - zoomAnterior) > 0.0001) {
+    for (const funcion of estado.alCambiarZoom) funcion(camara.zoom);
+  }
 }
 
 // Interpolación con entrada y salida suaves; el zoom se interpola en escala logarítmica
@@ -154,7 +230,7 @@ function animar(camara, estado, delta) {
 
   if (animacion.t === 1) {
     estado.animacion = null;
+    estado.zoomObjetivo = camara.zoom;
     animacion.alTerminar?.();
-    if (!estado.bloqueada) estado.zoomObjetivo = camara.zoom;
   }
 }

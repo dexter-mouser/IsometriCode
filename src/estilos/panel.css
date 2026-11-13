@@ -112,6 +112,16 @@
   font-weight: 600;
 }
 
+/* Indicación breve (por ejemplo, cómo elegir una oficina) */
+.panel__nota {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radio-chico);
+  font-size: 12px;
+  color: var(--color-acento-oscuro);
+  background: var(--color-acento-suave);
+}
+
 /* Botones de prueba */
 .panel__botones {
   display: grid;

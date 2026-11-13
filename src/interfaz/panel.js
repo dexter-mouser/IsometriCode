@@ -7,6 +7,7 @@ export function crearPanel({ alCerrar }) {
     id: document.getElementById('panel-id'),
     datos: document.getElementById('panel-datos'),
     botones: document.getElementById('panel-botones'),
+    nota: document.getElementById('panel-nota'),
   };
 
   const estaAbierto = () => panel.matches(':popover-open');
@@ -20,6 +21,8 @@ export function crearPanel({ alCerrar }) {
     partes.titulo.textContent = contenido.titulo;
     partes.id.textContent = contenido.id;
     partes.datos.replaceChildren(...contenido.datos.map(crearDato));
+    partes.nota.textContent = contenido.nota ?? '';
+    partes.nota.hidden = !contenido.nota;
     partes.botones.replaceChildren(...contenido.botones.map(crearBoton));
     if (!estaAbierto()) panel.showPopover();
   };

@@ -1,0 +1,83 @@
+/* Control de zoom abajo a la derecha */
+.zoom {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-borde);
+  border-radius: 999px;
+  background: var(--color-superficie);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--sombra);
+}
+
+.zoom__boton {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--color-menu);
+  transition: background-color 0.15s;
+}
+
+.zoom__boton:hover {
+  background: var(--color-acento);
+}
+
+.zoom__boton:active {
+  scale: 0.92;
+}
+
+.zoom__boton:disabled,
+.zoom__barra:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoom__boton svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+/* Barra: marca en la mitad = zoom predeterminado */
+.zoom__barra {
+  width: 160px;
+  height: 6px;
+  margin: 0;
+  border-radius: 999px;
+  accent-color: var(--color-acento);
+  background:
+    linear-gradient(var(--color-texto-suave), var(--color-texto-suave)) center / 2px 14px no-repeat,
+    var(--color-borde);
+  appearance: none;
+  cursor: pointer;
+}
+
+.zoom__barra::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: var(--color-acento);
+  box-shadow: var(--sombra);
+  appearance: none;
+}
+
+.zoom__barra::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: var(--color-acento);
+}

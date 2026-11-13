@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { metro, MITAD_TERRENO } from '../datos/ciudad.js';
+import { calle30, calleSur, metro, MITAD_TERRENO } from '../datos/ciudad.js';
 import { coloresEscena } from '../datos/tema.js';
-import { cajaUnidad, crearCaja, crearInstancias, pintarGeometria } from './utilidades.js';
+import { cajaUnidad, crearInstancias, crearLote, pintarGeometria } from './utilidades.js';
 
 const ESPESOR_TABLERO = 0.6;
 const SEPARACION_VAGONES = 0.3;
@@ -12,38 +12,39 @@ const mitadLargo = MITAD_TERRENO - 0.1;
 
 // Viaducto, estación y tren; devuelve la animación del tren
 export function crearMetro(escena) {
-  agregarViaducto(escena);
-  agregarEstacion(escena);
+  const lote = crearLote();
+  agregarViaducto(escena, lote);
+  agregarEstacion(escena, lote);
+  escena.add(lote.construir({ sombras: true }));
   return agregarTren(escena);
 }
 
-function agregarViaducto(escena) {
+// Los pilares no caen sobre la Calle 30 ni la calle del sur
+const sobreCalle = (x) => Math.abs(x - calle30.x) < calle30.ancho / 2 + 0.6 || Math.abs(x - calleSur.x) < calleSur.ancho / 2 + 0.6;
+
+function agregarViaducto(escena, lote) {
   const yTablero = metro.altura;
-  escena.add(
-    crearCaja([mitadLargo * 2, ESPESOR_TABLERO, metro.anchoTablero], [0, yTablero - ESPESOR_TABLERO / 2, metro.z], coloresEscena.concreto),
-    crearCaja([mitadLargo * 2, 0.06, 0.12], [0, yTablero + 0.03, metro.z - 0.5], coloresEscena.poste, { sombras: false }),
-    crearCaja([mitadLargo * 2, 0.06, 0.12], [0, yTablero + 0.03, metro.z + 0.5], coloresEscena.poste, { sombras: false }),
-  );
+  lote.caja([mitadLargo * 2, ESPESOR_TABLERO, metro.anchoTablero], [0, yTablero - ESPESOR_TABLERO / 2, metro.z], coloresEscena.concreto);
+  lote.caja([mitadLargo * 2, 0.06, 0.12], [0, yTablero + 0.03, metro.z - 0.5], coloresEscena.poste);
+  lote.caja([mitadLargo * 2, 0.06, 0.12], [0, yTablero + 0.03, metro.z + 0.5], coloresEscena.poste);
 
   const pilares = [];
   for (let x = -mitadLargo + 2; x < mitadLargo - 1; x += metro.separacionPilares) {
+    if (sobreCalle(x)) continue;
     pilares.push({ posicion: [x, (yTablero - ESPESOR_TABLERO) / 2, metro.z], escala: [0.7, yTablero - ESPESOR_TABLERO, 0.9] });
   }
   escena.add(crearInstancias(cajaUnidad, pilares, coloresEscena.concreto));
 }
 
 // Andenes, cubierta sobre columnas y escalera al suelo
-function agregarEstacion(escena) {
+function agregarEstacion(escena, lote) {
   const { estacionX: x, largoEstacion: largo, z, altura } = metro;
   const anchoAnden = 1.2;
   const altoCubierta = 2.4;
-  const partes = [
-    crearCaja([largo, 0.3, anchoAnden], [x, altura - 0.15, z - metro.anchoTablero / 2 - anchoAnden / 2], coloresEscena.aceraCiudad),
-    crearCaja([largo, 0.3, anchoAnden], [x, altura - 0.15, z + metro.anchoTablero / 2 + anchoAnden / 2], coloresEscena.aceraCiudad),
-    crearCaja([largo + 1, 0.2, metro.anchoTablero + anchoAnden * 2 + 0.6], [x, altura + altoCubierta, z], coloresEscena.techoEstacion),
-    crearCaja([3, altura, 1.6], [x + largo / 2 + 1.5, altura / 2, z - 2.4], coloresEscena.concreto),
-  ];
-  escena.add(...partes);
+  lote.caja([largo, 0.3, anchoAnden], [x, altura - 0.15, z - metro.anchoTablero / 2 - anchoAnden / 2], coloresEscena.aceraCiudad);
+  lote.caja([largo, 0.3, anchoAnden], [x, altura - 0.15, z + metro.anchoTablero / 2 + anchoAnden / 2], coloresEscena.aceraCiudad);
+  lote.caja([largo + 1, 0.2, metro.anchoTablero + anchoAnden * 2 + 0.6], [x, altura + altoCubierta, z], coloresEscena.techoEstacion);
+  lote.caja([3, altura, 1.6], [x + largo / 2 + 1.5, altura / 2, z - 2.4], coloresEscena.concreto);
 
   const columnas = [];
   for (const dz of [-1, 1]) {

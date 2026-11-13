@@ -1,28 +1,55 @@
 import * as THREE from 'three';
 import { coloresEscena } from '../datos/tema.js';
+import { crearAleatorio } from './utilidades.js';
 
 const colores = coloresEscena.oficina;
+const coloresControl = coloresEscena.control;
 const ANCHO_SALA = 12;
 const FONDO_SALA = 10;
 const ALTO_SALA = 3.2;
 const POSICION_CAMARA = new THREE.Vector3(0, 1.55, 1.6);
 const PUNTO_MIRA = new THREE.Vector3(0, 1.1, -5);
 const AMPLITUD_BALANCEO = 0.04;
+const INTENSIDAD_LUZ = 2.2;
+const INTENSIDAD_LUZ_CONTROL = 0.9;
 
-// Oficina genérica low-poly vista desde fuera de la ventana; escena y cámara propias
+// Interiores vistos a través de una ventana: varios diseños de oficina y la sala de control.
+// Escena y cámara propias; mostrarDiseno elige cuál se ve.
 export function crearOficina() {
   const escena = new THREE.Scene();
-  escena.background = new THREE.Color(colores.pared);
   const camara = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 60);
-  camara.position.copy(POSICION_CAMARA);
-  camara.lookAt(PUNTO_MIRA);
+  const luces = agregarLuces(escena);
+  const sala = agregarSala(escena);
+  const personas = [];
 
-  agregarLuces(escena);
-  agregarSala(escena);
-  agregarPuestos(escena);
-  agregarPlantas(escena);
-  const animarPersonas = agregarPersonas(escena);
+  const disenos = {
+    abierta: crearAbierta(personas),
+    juntas: crearJuntas(personas),
+    privada: crearPrivada(personas),
+    descanso: crearDescanso(personas),
+    control: crearControl(personas),
+  };
+  for (const grupo of Object.values(disenos)) escena.add(grupo);
   agregarMarcoVentana(escena);
+
+  // Muestra un diseño; la semilla (id del piso o la ventana) varía colores de muebles,
+  // pared de acento, piso y qué personas están presentes
+  const mostrarDiseno = (nombre, semilla = '') => {
+    const diseno = disenos[nombre] ? nombre : 'abierta';
+    for (const [clave, grupo] of Object.entries(disenos)) grupo.visible = clave === diseno;
+    const esControl = diseno === 'control';
+    const aleatorio = crearAleatorio(numeroDeSemilla(semilla));
+    const elegir = (lista) => lista[Math.floor(aleatorio() * lista.length)];
+    for (const [clave, materialVariable] of Object.entries(materialesVariables)) materialVariable.color.set(elegir(colores.variantes[clave]));
+    escena.background = new THREE.Color(esControl ? coloresControl.fondo : colores.pared);
+    sala.pared.color.set(esControl ? coloresControl.pared : colores.pared);
+    sala.paredFondo.color.set(esControl ? coloresControl.pared : elegir(colores.variantes.acento));
+    sala.piso.color.set(esControl ? colores.pisos.control : elegir(colores.variantes.piso));
+    for (const persona of disenos[diseno].userData.personas ?? []) persona.visible = aleatorio() < 0.8;
+    sala.lamparas.visible = !esControl;
+    luces.ambiente.intensity = esControl ? INTENSIDAD_LUZ_CONTROL : INTENSIDAD_LUZ;
+  };
+  mostrarDiseno('abierta');
 
   window.addEventListener('resize', () => {
     camara.aspect = window.innerWidth / window.innerHeight;
@@ -37,56 +64,158 @@ export function crearOficina() {
       POSICION_CAMARA.z,
     );
     camara.lookAt(PUNTO_MIRA);
-    animarPersonas(tiempo);
+    personas.forEach((persona, indice) => {
+      const giroCabeza = Math.sin(tiempo * 0.8 + indice * 2) * 0.25;
+      for (const parte of persona.userData.cabeza) parte.rotation.y = giroCabeza;
+      persona.position.y = Math.abs(Math.sin(tiempo * 1.2 + indice)) * 0.015;
+    });
   };
 
-  return { escena, camara, actualizar };
+  // Tarde: la luz que entra por la ventana se vuelve cálida
+  const colorDia = new THREE.Color('#fff4e2');
+  const colorTarde = new THREE.Color(coloresEscena.ambientes.tarde.sol);
+  const establecerTarde = (valor) => {
+    luces.ventanal.color.copy(colorDia).lerp(colorTarde, valor);
+  };
+
+  return { escena, camara, actualizar, mostrarDiseno, establecerTarde };
 }
 
-// Material mate tipo arcilla
+// Materiales mates tipo arcilla (compartidos por color) y pantallas que brillan.
+// Los colores 'var:...' usan un material cuyo color cambia en cada oficina.
+const materialesVariables = {
+  silla: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
+  sofa: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
+  madera: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
+};
 const materiales = new Map();
 function material(color) {
+  if (color.startsWith('var:')) return materialesVariables[color.slice(4)];
   if (!materiales.has(color)) materiales.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
   return materiales.get(color);
 }
 
-function caja(escala, posicion, color) {
+function caja(escala, posicion, color, giro = 0) {
   const malla = new THREE.Mesh(new THREE.BoxGeometry(...escala), material(color));
+  malla.position.set(...posicion);
+  malla.rotation.y = giro;
+  return malla;
+}
+
+function pantalla(escala, posicion, color) {
+  const malla = new THREE.Mesh(new THREE.BoxGeometry(...escala), new THREE.MeshBasicMaterial({ color }));
   malla.position.set(...posicion);
   return malla;
 }
 
 function agregarLuces(escena) {
-  escena.add(new THREE.HemisphereLight('#ffffff', '#c8b89c', 2.2));
+  const ambiente = new THREE.HemisphereLight('#ffffff', '#c8b89c', INTENSIDAD_LUZ);
   const ventanal = new THREE.DirectionalLight('#fff4e2', 1.6);
   ventanal.position.set(3, 4, 6);
-  escena.add(ventanal);
+  escena.add(ambiente, ventanal);
+  return { ambiente, ventanal };
 }
 
-// Piso, paredes, techo y lámparas de panel
+// Piso, paredes, techo y lámparas; paredes y piso con material propio para cambiar de color
 function agregarSala(escena) {
+  const pared = new THREE.MeshStandardMaterial({ color: colores.pared, roughness: 0.9 });
+  const paredFondo = new THREE.MeshStandardMaterial({ color: colores.pared, roughness: 0.9 });
+  const piso = new THREE.MeshStandardMaterial({ color: colores.piso, roughness: 0.9 });
+  const muro = (escala, posicion) => {
+    const malla = new THREE.Mesh(new THREE.BoxGeometry(...escala), pared);
+    malla.position.set(...posicion);
+    return malla;
+  };
+  const suelo = new THREE.Mesh(new THREE.BoxGeometry(ANCHO_SALA, 0.1, FONDO_SALA), piso);
+  const muroFondo = new THREE.Mesh(new THREE.BoxGeometry(ANCHO_SALA, ALTO_SALA, 0.1), paredFondo);
+  muroFondo.position.set(0, ALTO_SALA / 2, -FONDO_SALA);
+  suelo.position.set(0, -0.05, -FONDO_SALA / 2);
+
   escena.add(
-    caja([ANCHO_SALA, 0.1, FONDO_SALA], [0, -0.05, -FONDO_SALA / 2], colores.piso),
+    suelo,
     caja([ANCHO_SALA, 0.1, FONDO_SALA], [0, ALTO_SALA, -FONDO_SALA / 2], colores.techo),
-    caja([ANCHO_SALA, ALTO_SALA, 0.1], [0, ALTO_SALA / 2, -FONDO_SALA], colores.pared),
-    caja([0.1, ALTO_SALA, FONDO_SALA], [-ANCHO_SALA / 2, ALTO_SALA / 2, -FONDO_SALA / 2], colores.pared),
-    caja([0.1, ALTO_SALA, FONDO_SALA], [ANCHO_SALA / 2, ALTO_SALA / 2, -FONDO_SALA / 2], colores.pared),
+    muroFondo,
+    muro([0.1, ALTO_SALA, FONDO_SALA], [-ANCHO_SALA / 2, ALTO_SALA / 2, -FONDO_SALA / 2]),
+    muro([0.1, ALTO_SALA, FONDO_SALA], [ANCHO_SALA / 2, ALTO_SALA / 2, -FONDO_SALA / 2]),
   );
 
-  const lampara = new THREE.MeshBasicMaterial({ color: colores.lampara });
+  const lamparas = new THREE.Group();
+  const luzPanel = new THREE.MeshBasicMaterial({ color: colores.lampara });
   for (const x of [-3, 0, 3]) {
     for (const z of [-2.5, -6]) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.04, 0.6), lampara);
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.04, 0.6), luzPanel);
       panel.position.set(x, ALTO_SALA - 0.07, z);
-      escena.add(panel);
+      lamparas.add(panel);
     }
   }
+  escena.add(lamparas);
+  return { pared, paredFondo, piso, lamparas };
+}
 
-  // Cuadro y pizarra en la pared del fondo
-  escena.add(
-    caja([2.4, 1.2, 0.05], [-2.5, 1.7, -FONDO_SALA + 0.08], '#ffffff'),
-    caja([1.2, 0.8, 0.05], [2.8, 1.8, -FONDO_SALA + 0.08], coloresEscena.vidrioVerde),
-  );
+function crearPlanta(x, z, tamano) {
+  const planta = new THREE.Group();
+  const hojas = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4 * tamano, 0), new THREE.MeshStandardMaterial({ color: colores.hojas, roughness: 0.9, flatShading: true }));
+  hojas.position.y = 0.75 * tamano;
+  hojas.scale.y = 1.3;
+  planta.add(caja([0.4 * tamano, 0.45 * tamano, 0.4 * tamano], [0, 0.22 * tamano, 0], colores.maceta), hojas);
+  planta.position.set(x, 0, z);
+  return planta;
+}
+
+// Persona estilo arcilla: piernas, torso y brazos en cápsula, cabeza esférica y cabello
+function crearPersona({ cabello, camisa, pantalon, sentada }) {
+  const persona = new THREE.Group();
+  const alturaCadera = sentada ? 0.5 : 0.85;
+
+  for (const lado of [-1, 1]) {
+    const pierna = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, sentada ? 0.3 : 0.66, 4, 8), material(pantalon));
+    const zapato = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), material(colores.zapato));
+    zapato.scale.set(1, 0.6, 1.5);
+    if (sentada) {
+      pierna.rotation.x = Math.PI / 2;
+      pierna.position.set(lado * 0.09, alturaCadera, -0.22);
+      zapato.position.set(lado * 0.09, 0.05, -0.42);
+    } else {
+      pierna.position.set(lado * 0.09, 0.44, 0);
+      zapato.position.set(lado * 0.09, 0.05, -0.04);
+    }
+    persona.add(pierna, zapato);
+  }
+
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.36, 4, 10), material(camisa));
+  torso.position.y = alturaCadera + 0.36;
+  for (const lado of [-1, 1]) {
+    const brazo = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.4, 4, 8), material(camisa));
+    brazo.position.set(lado * 0.25, alturaCadera + 0.36, sentada ? -0.08 : 0);
+    brazo.rotation.set(sentada ? -0.7 : 0, 0, lado * 0.12);
+    persona.add(brazo);
+  }
+  const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), material(colores.piel));
+  cabeza.position.y = alturaCadera + 0.85;
+  const pelo = new THREE.Mesh(new THREE.SphereGeometry(0.175, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), material(cabello));
+  pelo.position.y = cabeza.position.y + 0.02;
+  pelo.rotation.x = 0.25;
+
+  persona.add(torso, cabeza, pelo);
+  persona.userData.cabeza = [cabeza, pelo];
+  return persona;
+}
+
+// Agrega personas a un grupo: [x, z, giro, sentada]
+function agregarPersonas(grupo, personas, lista) {
+  lista.forEach(([x, z, giro, sentada], indice) => {
+    const persona = crearPersona({
+      cabello: colores.cabello[(indice + personas.length) % colores.cabello.length],
+      camisa: colores.camisa[(indice + personas.length) % colores.camisa.length],
+      pantalon: colores.pantalon[(indice + personas.length) % colores.pantalon.length],
+      sentada,
+    });
+    persona.position.set(x, 0, z);
+    persona.rotation.y = giro;
+    grupo.add(persona);
+    personas.push(persona);
+    grupo.userData.personas = [...(grupo.userData.personas ?? []), persona];
+  });
 }
 
 // Escritorio con monitor y silla
@@ -100,8 +229,8 @@ function crearPuesto(x, z, giro) {
     caja([0.5, 0.29, 0.01], [0, 1.0, -0.198], colores.pantalla),
     caja([0.06, 0.18, 0.06], [0, 0.83, -0.24], colores.monitor),
     caja([0.42, 0.02, 0.14], [0, 0.775, 0.05], '#d7d9dc'),
-    caja([0.48, 0.08, 0.45], [0, 0.46, 0.55], colores.silla),
-    caja([0.48, 0.5, 0.06], [0, 0.75, 0.8], colores.silla),
+    caja([0.48, 0.08, 0.45], [0, 0.46, 0.55], 'var:silla'),
+    caja([0.48, 0.5, 0.06], [0, 0.75, 0.8], 'var:silla'),
     caja([0.06, 0.42, 0.06], [0, 0.21, 0.55], colores.patas),
   );
   puesto.position.set(x, 0, z);
@@ -109,80 +238,121 @@ function crearPuesto(x, z, giro) {
   return puesto;
 }
 
-// Dos filas de puestos enfrentados
-function agregarPuestos(escena) {
-  for (const x of [-3.4, -1.7, 1.7, 3.4]) {
-    escena.add(crearPuesto(x, -3.4, 0), crearPuesto(x, -5.2, Math.PI));
+// Open space: dos filas de puestos enfrentados
+function crearAbierta(personas) {
+  const grupo = new THREE.Group();
+  for (const x of [-3.4, -1.7, 1.7, 3.4]) grupo.add(crearPuesto(x, -3.4, 0), crearPuesto(x, -5.2, Math.PI));
+  grupo.add(
+    caja([2.4, 1.2, 0.05], [-2.5, 1.7, -FONDO_SALA + 0.08], '#ffffff'),
+    caja([1.2, 0.8, 0.05], [2.8, 1.8, -FONDO_SALA + 0.08], coloresEscena.vidrioVerde),
+    crearPlanta(-5.3, -8.8, 1.4), crearPlanta(5.3, -8.8, 1.2), crearPlanta(0, -7.6, 1), crearPlanta(-5.3, -1.2, 1.1),
+  );
+  agregarPersonas(grupo, personas, [[-1.7, -2.8, Math.PI, true], [3.4, -5.8, 0, true], [0.4, -2.2, -0.6, false]]);
+  return grupo;
+}
+
+// Sala de juntas: mesa larga, sillas, gran pantalla en la pared del fondo
+function crearJuntas(personas) {
+  const grupo = new THREE.Group();
+  grupo.add(
+    caja([5.2, 0.08, 1.7], [0, 0.74, -5.2], 'var:madera'),
+    caja([0.3, 0.7, 1], [-1.8, 0.35, -5.2], colores.patas),
+    caja([0.3, 0.7, 1], [1.8, 0.35, -5.2], colores.patas),
+    caja([3.4, 1.9, 0.08], [0, 1.65, -FONDO_SALA + 0.1], colores.monitor),
+    pantalla([3.2, 1.75, 0.02], [0, 1.65, -FONDO_SALA + 0.15], colores.pantallaJuntas),
+    caja([1.6, 1.1, 0.04], [4.4, 1.6, -FONDO_SALA + 0.08], '#ffffff'),
+    crearPlanta(-5.3, -8.8, 1.5), crearPlanta(5.3, -1.5, 1.2),
+  );
+  for (const x of [-2, -1, 0, 1, 2]) {
+    for (const lado of [-1, 1]) {
+      grupo.add(caja([0.5, 0.5, 0.06], [x, 0.75, -5.2 + lado * 1.25], 'var:silla'), caja([0.48, 0.08, 0.45], [x, 0.46, -5.2 + lado * 1.05], 'var:silla'));
+    }
   }
+  agregarPersonas(grupo, personas, [[-1, -4.15, Math.PI, true], [1, -4.15, Math.PI, true], [0, -6.25, 0, true], [2, -6.25, 0, true], [-3, -3.2, -0.4, false]]);
+  return grupo;
 }
 
-function crearPlanta(x, z, tamano) {
-  const planta = new THREE.Group();
-  const hojas = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4 * tamano, 0), new THREE.MeshStandardMaterial({ color: colores.hojas, roughness: 0.9, flatShading: true }));
-  hojas.position.y = 0.75 * tamano;
-  hojas.scale.y = 1.3;
-  planta.add(caja([0.4 * tamano, 0.45 * tamano, 0.4 * tamano], [0, 0.22 * tamano, 0], colores.maceta), hojas);
-  planta.position.set(x, 0, z);
-  return planta;
-}
-
-function agregarPlantas(escena) {
-  escena.add(crearPlanta(-5.3, -8.8, 1.4), crearPlanta(5.3, -8.8, 1.2), crearPlanta(0, -7.6, 1), crearPlanta(-5.3, -1.2, 1.1));
-}
-
-// Persona estilo arcilla: cuerpo en cápsula, cabeza esférica y cabello redondeado
-function crearPersona({ cabello, camisa, pantalon, sentada }) {
-  const persona = new THREE.Group();
-  const alturaCadera = sentada ? 0.5 : 0.85;
-  const piernas = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, sentada ? 0.3 : 0.6, 4, 8), material(pantalon));
-  if (sentada) {
-    piernas.rotation.x = Math.PI / 2;
-    piernas.position.set(0, alturaCadera, -0.2);
-  } else {
-    piernas.position.y = alturaCadera / 2 + 0.05;
+// Oficina privada: escritorio ejecutivo, biblioteca, sofá y mesa de centro
+function crearPrivada(personas) {
+  const grupo = new THREE.Group();
+  grupo.add(
+    caja([2.4, 0.08, 1], [1.2, 0.76, -6], 'var:madera'),
+    caja([2.3, 0.7, 0.9], [1.2, 0.36, -6.05], colores.estante),
+    caja([0.6, 0.38, 0.04], [1.2, 1.02, -6.35], colores.monitor),
+    caja([0.55, 0.9, 0.55], [1.2, 0.5, -7], 'var:silla'),
+    caja([4.6, 2.2, 0.45], [-1.8, 1.1, -FONDO_SALA + 0.3], colores.estante),
+    caja([2.4, 0.03, 1.8], [-3.2, 0.015, -3.4], 'var:sofa'),
+    caja([2.2, 0.45, 0.8], [-3.6, 0.3, -4.4], 'var:sofa'),
+    caja([2.2, 0.55, 0.2], [-3.6, 0.55, -4.75], 'var:sofa'),
+    caja([1, 0.35, 0.6], [-3.6, 0.2, -3.2], 'var:madera'),
+    crearPlanta(5.2, -8.8, 1.5), crearPlanta(-5.3, -1.6, 1.2),
+  );
+  // Libros de colores en la biblioteca
+  for (let fila = 0; fila < 3; fila++) {
+    for (let libro = 0; libro < 9; libro++) {
+      const color = colores.camisa[(fila + libro) % colores.camisa.length];
+      grupo.add(caja([0.18, 0.4, 0.3], [-3.8 + libro * 0.48, 0.55 + fila * 0.65, -FONDO_SALA + 0.55], color));
+    }
   }
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.4, 4, 10), material(camisa));
-  torso.position.y = alturaCadera + 0.38;
-  const cabeza = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 12), material(colores.piel));
-  cabeza.position.y = alturaCadera + 0.85;
-  const pelo = new THREE.Mesh(new THREE.SphereGeometry(0.175, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), material(cabello));
-  pelo.position.y = cabeza.position.y + 0.02;
-  pelo.rotation.x = 0.25;
-
-  persona.add(piernas, torso, cabeza, pelo);
-  persona.userData.cabeza = [cabeza, pelo];
-  return persona;
+  agregarPersonas(grupo, personas, [[1.2, -6.9, Math.PI, true]]);
+  return grupo;
 }
 
-function agregarPersonas(escena) {
-  const personas = [
-    { x: -1.7, z: -2.8, giro: Math.PI, sentada: true },
-    { x: 3.4, z: -5.8, giro: 0, sentada: true },
-    { x: 0.4, z: -2.2, giro: -0.6, sentada: false },
-  ].map((datos, indice) => {
-    const persona = crearPersona({
-      cabello: colores.cabello[indice % colores.cabello.length],
-      camisa: colores.camisa[indice % colores.camisa.length],
-      pantalon: colores.pantalon[indice % colores.pantalon.length],
-      sentada: datos.sentada,
-    });
-    persona.position.set(datos.x, 0, datos.z);
-    persona.rotation.y = datos.giro;
-    escena.add(persona);
-    return persona;
-  });
+// Zona de descanso: cocineta, sofás, puffs y mesa de ping-pong
+function crearDescanso(personas) {
+  const grupo = new THREE.Group();
+  grupo.add(
+    caja([5, 0.95, 0.7], [-2.5, 0.48, -FONDO_SALA + 0.4], colores.cocina),
+    caja([5, 0.06, 0.75], [-2.5, 0.98, -FONDO_SALA + 0.4], 'var:madera'),
+    caja([0.8, 2, 0.7], [0.6, 1, -FONDO_SALA + 0.4], '#e6e8ea'),
+    caja([2.6, 0.45, 0.9], [2.6, 0.3, -3.2], 'var:sofa'),
+    caja([2.6, 0.5, 0.2], [2.6, 0.55, -2.8], 'var:sofa'),
+    caja([1.2, 0.35, 0.7], [2.6, 0.2, -4.3], 'var:madera'),
+    caja([2.7, 0.08, 1.5], [-2.2, 0.76, -4.6], '#2f7a58'),
+    caja([0.03, 0.15, 1.5], [-2.2, 0.86, -4.6], '#ffffff'),
+    caja([2.4, 0.7, 1.2], [-2.2, 0.36, -4.6], colores.patas),
+    crearPlanta(5.3, -8.8, 1.6), crearPlanta(-5.3, -2, 1.4), crearPlanta(4.8, -6.5, 1),
+  );
+  for (const [x, z, color] of [[4.4, -5, colores.camisa[0]], [3.4, -5.6, colores.camisa[1]]]) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 8), material(color));
+    puff.scale.y = 0.6;
+    puff.position.set(x, 0.25, z);
+    grupo.add(puff);
+  }
+  agregarPersonas(grupo, personas, [[-3.2, -8.6, Math.PI, false], [2.2, -3.1, Math.PI, true], [-2.2, -3.4, Math.PI, false]]);
+  return grupo;
+}
 
-  return (tiempo) => {
-    personas.forEach((persona, indice) => {
-      const giroCabeza = Math.sin(tiempo * 0.8 + indice * 2) * 0.25;
-      for (const parte of persona.userData.cabeza) parte.rotation.y = giroCabeza;
-      persona.position.y = Math.abs(Math.sin(tiempo * 1.2 + indice)) * 0.015;
-    });
-  };
+// Sala de control: muro de pantallas, consolas en dos filas y operadores
+function crearControl(personas) {
+  const grupo = new THREE.Group();
+  const filas = 3;
+  const columnas = 6;
+  for (let fila = 0; fila < filas; fila++) {
+    for (let columna = 0; columna < columnas; columna++) {
+      const color = coloresControl.pantallas[(fila * 2 + columna) % coloresControl.pantallas.length];
+      grupo.add(
+        caja([1.5, 0.82, 0.06], [-3.9 + columna * 1.56, 0.85 + fila * 0.86, -FONDO_SALA + 0.12], coloresControl.consola),
+        pantalla([1.4, 0.74, 0.02], [-3.9 + columna * 1.56, 0.85 + fila * 0.86, -FONDO_SALA + 0.16], color),
+      );
+    }
+  }
+  for (const [z, ancho] of [[-6.2, 7], [-3.8, 5.4]]) {
+    grupo.add(caja([ancho, 0.8, 0.8], [0, 0.4, z], coloresControl.consola));
+    for (let indice = 0; indice < Math.floor(ancho / 1.1); indice++) {
+      const x = -ancho / 2 + 0.55 + indice * 1.1;
+      grupo.add(
+        caja([0.6, 0.38, 0.05], [x, 1.02, z - 0.25], colores.monitor),
+        pantalla([0.55, 0.33, 0.01], [x, 1.02, z - 0.22], coloresControl.pantallas[indice % coloresControl.pantallas.length]),
+      );
+    }
+  }
+  agregarPersonas(grupo, personas, [[-1.6, -5.5, Math.PI, true], [1.1, -5.5, Math.PI, true], [-0.6, -3.1, Math.PI, true], [2.6, -2.4, -0.5, false]]);
+  return grupo;
 }
 
 // Fachada con el hueco de la ventana, marco y vidrio en primer plano:
-// la oficina se ve "a través" de la ventana tocada
+// el interior se ve "a través" de la ventana tocada
 function agregarMarcoVentana(escena) {
   const zFachada = 0.65;
   const ancho = 1.15;
@@ -208,4 +378,11 @@ function agregarMarcoVentana(escena) {
   );
   vidrio.position.set(centro.x, centro.y, zFachada - 0.04);
   escena.add(vidrio);
+}
+
+// Número estable a partir de un texto
+function numeroDeSemilla(texto) {
+  let hash = 7;
+  for (const caracter of String(texto)) hash = (hash * 31 + caracter.charCodeAt(0)) >>> 0;
+  return hash;
 }

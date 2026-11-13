@@ -44,5 +44,5 @@ export const puentes = [
 // Espacio público clicable
 export const zonas = {
   plazaCentral: { id: 'zona/plaza-central', nombre: 'Plazoleta Central' },
-  plazaFrontal: { id: 'zona/plaza-frontal', nombre: 'Plaza Frontal', zDesde: 3.25, zHasta: 13.5 },
+  plazaFrontal: { id: 'zona/plaza-frontal', nombre: 'Plaza Frontal', zDesde: 3.25, zHasta: 9.4 },
 };
